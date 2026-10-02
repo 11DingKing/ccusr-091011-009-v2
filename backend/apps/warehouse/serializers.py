@@ -2,7 +2,10 @@
 仓库管理序列化器
 """
 from rest_framework import serializers
-from .models import Unit, Category, Variety, Goods, StockIn, StockOut, Warning, Approval
+from .models import (
+    Unit, Category, Variety, Goods, StockIn, StockOut, Warning, Approval,
+    ReviewRuleVersion, ReviewTask, ReviewRecord,
+)
 
 
 class UnitSerializer(serializers.ModelSerializer):
@@ -193,10 +196,105 @@ class ApprovalSerializer(serializers.ModelSerializer):
     """审批记录序列化器"""
     approver_name = serializers.CharField(source='approver.username', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
+    approval_type_display = serializers.CharField(source='get_approval_type_display', read_only=True)
+
     class Meta:
         model = Approval
         fields = [
             'id', 'stock_out', 'approver', 'approver_name',
-            'status', 'status_display', 'remark', 'created_at', 'updated_at'
+            'status', 'status_display', 'approval_type', 'approval_type_display',
+            'remark', 'created_at', 'updated_at'
         ]
+
+
+# ==================== 封存复核 ====================
+
+class ReviewRuleSerializer(serializers.ModelSerializer):
+    """复核规则版本序列化器"""
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = ReviewRuleVersion
+        fields = [
+            'id', 'category', 'category_name', 'version', 'name',
+            'interval_days', 'check_items', 'overdue_grace_days',
+            'status', 'status_display', 'created_by_name',
+            'published_at', 'deprecated_at', 'created_at'
+        ]
+        read_only_fields = ['id', 'version', 'status', 'published_at',
+                            'deprecated_at', 'created_at', 'updated_at']
+
+
+class ReviewRulePublishSerializer(serializers.Serializer):
+    """复核规则发布（产生新版本）序列化器"""
+    category = serializers.IntegerField(required=False, allow_null=True)
+    name = serializers.CharField(min_length=1, max_length=100)
+    interval_days = serializers.IntegerField(min_value=1, max_value=3650)
+    check_items = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        min_length=1, allow_empty=False
+    )
+    overdue_grace_days = serializers.IntegerField(min_value=0, max_value=365, default=0)
+
+    def validate_category(self, value):
+        if value is not None and not Category.objects.filter(pk=value).exists():
+            raise serializers.ValidationError('品类不存在')
+        return value
+
+
+class ReviewTaskSerializer(serializers.ModelSerializer):
+    """复核待办序列化器"""
+    goods_name = serializers.CharField(source='goods.name', read_only=True)
+    goods_code = serializers.CharField(source='goods.code', read_only=True)
+    category_name = serializers.CharField(source='goods.variety.category.name', read_only=True)
+    rule_version_label = serializers.SerializerMethodField()
+    is_overdue = serializers.BooleanField(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = ReviewTask
+        fields = [
+            'id', 'goods', 'goods_name', 'goods_code', 'category_name',
+            'rule_version', 'rule_version_label', 'baseline_date', 'due_date',
+            'is_overdue', 'status', 'status_display',
+            'created_at', 'updated_at'
+        ]
+
+    def get_rule_version_label(self, obj):
+        return f"v{obj.rule_version.version}"
+
+
+class ReviewRecordSerializer(serializers.ModelSerializer):
+    """复核结果序列化器"""
+    goods_name = serializers.CharField(source='goods.name', read_only=True)
+    goods_code = serializers.CharField(source='goods.code', read_only=True)
+    reviewer_name = serializers.CharField(source='reviewer.username', read_only=True)
+    conclusion_display = serializers.CharField(source='get_conclusion_display', read_only=True)
+    rule_name = serializers.CharField(source='rule_version.name', read_only=True)
+    rule_version_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReviewRecord
+        fields = [
+            'id', 'goods', 'goods_name', 'goods_code', 'task',
+            'rule_version', 'rule_name', 'rule_version_label', 'rule_snapshot',
+            'conclusion', 'conclusion_display', 'abnormal_items',
+            'next_due_date', 'reviewer', 'reviewer_name',
+            'review_date', 'remark', 'created_at'
+        ]
+
+    def get_rule_version_label(self, obj):
+        return f"v{obj.rule_version.version}"
+
+
+class ReviewCompleteSerializer(serializers.Serializer):
+    """复核结果登记序列化器"""
+    conclusion = serializers.ChoiceField(choices=['qualified', 'abnormal'])
+    abnormal_items = serializers.ListField(
+        child=serializers.CharField(max_length=200),
+        required=False, default=list
+    )
+    review_date = serializers.DateField(required=False)
+    remark = serializers.CharField(max_length=500, required=False, default='', allow_blank=True)

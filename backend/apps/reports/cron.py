@@ -94,6 +94,23 @@ def generate_daily_report():
     logger.info(f"每日报表生成完成: {yesterday}")
 
 
+def generate_review_tasks():
+    """
+    生成封存复核待办 - 定时任务
+    每天凌晨1点30分执行，依据可版本化的复核规则批量生成待办。
+    任务幂等：重复执行不会为同一物资创建重复的待复核待办。
+    """
+    from apps.warehouse.review import generate_review_tasks as _generate
+
+    logger.info("开始执行封存复核待办生成定时任务...")
+    result = _generate()
+    logger.info(
+        "封存复核待办生成完成，新增待办: %s 条，跳过: %s 条",
+        result['created_count'], result['skipped_count']
+    )
+    return result
+
+
 def clean_old_logs():
     """
     清理旧日志 - 定时任务
