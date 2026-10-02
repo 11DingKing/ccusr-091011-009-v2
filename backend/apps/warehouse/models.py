@@ -196,6 +196,7 @@ class Warning(models.Model):
         ('low_stock', '库存不足'),
         ('expiring', '即将过期'),
         ('expired', '已过期'),
+        ('review_overdue', '周期复核逾期'),
     ]
     
     goods = models.ForeignKey(

@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     "django_filters",
     "apps.authentication",
     "apps.warehouse",
+    "apps.inspections",
     "apps.personnel",
     "apps.reports",
 ]
